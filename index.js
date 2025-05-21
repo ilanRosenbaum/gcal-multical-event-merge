@@ -3,6 +3,7 @@ window.onload = function () {
     const getDisabled = () => new Promise(res => chrome.storage.local.get('disabled', (s) => res(s.disabled)));
     const getStyle = () => new Promise(res => chrome.storage.local.get('style', (s) => res(s.style)));
     const getWildcard = () => new Promise(res => chrome.storage.local.get('wildcard', (s) => res(s.wildcard)));
+    const getIgnoreDetails = () => new Promise(res => chrome.storage.local.get('ignoreDetails', (s) => res(s.ignoreDetails))); // New getter
 
     const setIcon = (disabled) => chrome.action.setIcon({
         path: disabled ? "icon-disabled.png" : "icon.png"
@@ -46,6 +47,14 @@ window.onload = function () {
         setText('wildcard_value',value)
     });
 
+    getIgnoreDetails().then(value => { // Initialize new setting
+        if (value == null) {
+            value = false; // Default to false
+            chrome.storage.local.set({ 'ignoreDetails': value });
+        }
+        setToggle('toggle_ignore_details', value);
+    });
+
     const manifest_data = chrome.runtime.getManifest();
     document.getElementById('version').innerHTML=`V${manifest_data.version}`
 
@@ -63,5 +72,11 @@ window.onload = function () {
     document.getElementById('wildcard_value').onchange = function (e) {
         if (e.target.value.length < 3 && e.target.value !== '') return alert('wildcard too short, you are going to get problems. If you do not want wildcard matching make this textbox blank')
         chrome.storage.local.set({ 'wildcard': e.target.value });
+    };
+
+    document.getElementById('toggle_ignore_details').onclick = function () { // Handle click for new toggle
+        getIgnoreDetails().then(currentVal => {
+            chrome.storage.local.set({ 'ignoreDetails': !currentVal });
+        });
     };
 }

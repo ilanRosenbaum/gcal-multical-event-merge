@@ -248,6 +248,24 @@ function findMatchingString(eventSets, string_1, wildcard) {
     return null
 }
 
+// Helper function to extract title and time from event text
+function extractTitleAndTime(eventText) {
+    // This regex tries to match common time formats like "8:30 – 10am" or "4:45 – 6pm"
+    const timeRegex = /(\d+(?::\d+)?\s*(?:–|-)\s*\d+(?::\d+)?\s*(?:am|pm|a|p)?)/i;
+    const timeMatch = eventText.match(timeRegex);
+    
+    if (timeMatch) {
+        // Get everything before the time as the title
+        const timeIndex = eventText.indexOf(timeMatch[0]);
+        const title = eventText.substring(0, timeIndex).trim();
+        const time = timeMatch[0].replace(/\s+/g, "");
+        return { title, time };
+    }
+    
+    // If no time format is found, return the whole text as title
+    return { title: eventText, time: "" };
+}
+
 const merge = async mainCalender => {
     const getWildcard = () =>
         new Promise((res, rej) => {
@@ -259,13 +277,27 @@ const merge = async mainCalender => {
                 }
             })
         })
+        
+    const getIgnoreDetails = () =>
+        new Promise((res, rej) => {
+            chrome.storage.local.get("ignoreDetails", s => {
+                if (chrome.runtime.lastError) {
+                    rej(chrome.runtime.lastError)
+                } else {
+                    res(s.ignoreDetails)
+                }
+            })
+        })
 
-    let wildcard
+    let wildcard, ignoreDetails;
     try {
-        wildcard = await getWildcard()
+        wildcard = await getWildcard();
+        ignoreDetails = await getIgnoreDetails();
     } catch (error) {
-        wildcard = ""
+        wildcard = "";
+        ignoreDetails = false;
     }
+    
     const eventSets = {}
     const days = mainCalender.querySelectorAll('[role="gridcell"]')
     days.forEach((day, index) => {
@@ -275,12 +307,48 @@ const merge = async mainCalender => {
             if (!eventTitleEls.length) {
                 return
             }
-            let eventKey = Array.from(eventTitleEls)
-                .map(el => el.textContent)
-                .join("")
-                .replace(/\\s+/g, "")
-            eventKey = index + "_" + eventKey + event.style.height
-            const wildcard_match_to_existing_key = wildcard ? findMatchingString(eventSets, eventKey, wildcard) : null
+            
+            const titleElementsText = Array.from(eventTitleEls).map(el => el.textContent);
+            let textToProcess = titleElementsText.join("");
+            
+            // Clean up the text by removing spaces
+            let cleanedEventText = textToProcess.replace(/\\s+/g, "");
+            
+            let eventKey;
+            
+            if (ignoreDetails) {
+                // If ignoreDetails is enabled, we only use title and time for matching
+                const { title, time } = extractTitleAndTime(cleanedEventText);
+                eventKey = index + "_" + title + time + "_" + event.style.height;
+                
+                // For debugging
+                console.log("Event Candidate:", {
+                    originalTexts: titleElementsText,
+                    pathTaken: "A (IgnoreDetails)",
+                    textToProcess: textToProcess,
+                    cleanedEventText: cleanedEventText,
+                    extractedTitle: title,
+                    extractedTime: time,
+                    height: event.style.height,
+                    fullEventKey: eventKey
+                });
+            } else {
+                // Original behavior - use full text for matching
+                eventKey = index + "_" + cleanedEventText + event.style.height;
+                
+                // For debugging
+                console.log("Event Candidate:", {
+                    originalTexts: titleElementsText,
+                    pathTaken: "C (NoIgnore)",
+                    textToProcess: textToProcess,
+                    cleanedEventText: cleanedEventText,
+                    height: event.style.height,
+                    fullEventKey: eventKey
+                });
+            }
+            
+            const wildcard_match_to_existing_key = wildcard ? findMatchingString(eventSets, eventKey, wildcard) : null;
+            
             // if the wildcard event is a match to an existing key, then add it to that key
             // rather than creating a new key
             if (wildcard_match_to_existing_key) {
@@ -350,6 +418,7 @@ setTimeout(
                 if (changes.disabled) window.location.reload()
                 if (changes.style) window.location.reload()
                 if (changes.wildcard) window.location.reload()
+                if (changes.ignoreDetails) window.location.reload()
             })
         }),
     10
